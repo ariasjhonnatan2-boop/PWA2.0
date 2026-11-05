@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fuel-app-v3';
+const CACHE_NAME = 'fuel-app-v4';
 const ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {
@@ -16,6 +16,20 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method === 'POST') return;
   event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
+});
+
+// Al hacer clic en la notificación flotante, abrir la app de inmediato
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (let i = 0; i < clientList.length; i++) {
+        let client = clientList[i];
+        if ('focus' in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow('./index.html');
+    })
+  );
 });
 
 self.addEventListener('sync', (event) => {

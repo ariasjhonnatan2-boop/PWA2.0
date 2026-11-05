@@ -47,6 +47,7 @@
   let db;
   let ultimaSincronizacion = "Ninguna";
 
+  // Inicializar IndexedDB
   const request = indexedDB.open("FuelAppDB", 1);
   request.onupgradeneeded = (e) => {
     db = e.target.result;
@@ -59,12 +60,17 @@
     db = e.target.result;
     actualizarInterfaz();
     sincronizarPendientes();
+    
+    // Solicitar permiso para notificaciones flotantes al cargar la app
+    if ("Notification" in window && Notification.permission !== "granted") {
+      Notification.requestPermission();
+    }
   };
 
+  // Guardar registro offline al enviar formulario
   document.getElementById("fuelForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     
-    // Obtener la fecha y hora exacta local en el momento de crear el registro en campo
     const ahora = new Date();
     const fechaLocalStr = ahora.getFullYear() + '-' + 
       String(ahora.getMonth() + 1).padStart(2, '0') + '-' + 
@@ -98,6 +104,7 @@
     };
   });
 
+  // Función de sincronización y medición de tiempo
   async function sincronizarPendientes() {
     if (!navigator.onLine || !db) return;
 
@@ -139,6 +146,7 @@
     }
   }
 
+  // Actualizar indicadores visuales y lanzar notificación si hay pendientes al recuperar red
   async function actualizarInterfaz() {
     const statusEl = document.getElementById("status");
     if (!db) return;
@@ -165,9 +173,36 @@
     };
   }
 
-  window.addEventListener('online', () => { actualizarInterfaz(); sincronizarPendientes(); });
+  // Detectar cuando regresa la red
+  window.addEventListener('online', async () => {
+    actualizarInterfaz();
+    
+    // Verificar si hay pendientes para mandar notificación flotante nativa
+    if (db) {
+      const tx = db.transaction("registros", "readonly");
+      const registros = await new Promise(res => {
+        tx.objectStore("registros").getAll().onsuccess = (e) => res(e.target.result);
+      });
+      const pendientes = registros.filter(r => !r.sincronizado).length;
+
+      if (pendientes > 0 && Notification.permission === "granted") {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification("¡Cobertura detectada!", {
+            body: `Tienes ${pendientes} registros listos para Google Sheets. ¡Toca aquí para sincronizar!`,
+            icon: "https://cdn-icons-png.flaticon.com/512/2933/2933886.png",
+            tag: "sync-alert",
+            vibrate: [200, 100, 200]
+          });
+        });
+      }
+    }
+
+    sincronizarPendientes();
+  });
+
   window.addEventListener('offline', actualizarInterfaz);
 
+  // Registrar Service Worker
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js');
   }
